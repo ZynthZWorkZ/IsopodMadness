@@ -1,0 +1,467 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="MainScene" extends="Scene">
+    <script type="text/brightscript">
+        <![CDATA[
+            sub init()
+                ' Get main nodes
+                m.isopod = m.top.findNode("isopod")
+                m.leaf = m.top.findNode("leaf")
+                m.scoreBg = m.top.findNode("scoreBg")
+                m.scoreDisplay = m.top.findNode("scoreDisplay")
+                m.gameCanvas = m.top.findNode("gameCanvas")
+                m.gameBackground = m.top.findNode("gameBackground")
+                m.gameOverGroup = m.top.findNode("gameOverGroup")
+                m.gameOverText = m.top.findNode("gameOverText")
+                m.restartButton = m.top.findNode("restartButton")
+                m.restartButtonBg = m.top.findNode("restartButtonBg")
+                m.highScoreText = m.top.findNode("highScoreText")
+                
+                ' Set up custom font for score display and game over - using AbsoluteXero font
+                m.customFont = CreateObject("roSGNode", "Font")
+                m.customFont.uri = "pkg:/fonts/AbsoluteXero-YwOO.ttf"
+                m.customFont.size = 32
+                m.scoreDisplay.font = m.customFont
+                
+                ' Set game over text font (smaller size)
+                m.gameOverFont = CreateObject("roSGNode", "Font")
+                m.gameOverFont.uri = "pkg:/fonts/AbsoluteXero-YwOO.ttf"
+                m.gameOverFont.size = 36  ' Reduced from 44 to 36
+                m.gameOverText.font = m.gameOverFont
+                
+                ' Set restart button font
+                m.restartButtonFont = CreateObject("roSGNode", "Font")
+                m.restartButtonFont.uri = "pkg:/fonts/AbsoluteXero-YwOO.ttf"
+                m.restartButtonFont.size = 24  ' Reduced from 26 to 24
+                m.restartButton.font = m.restartButtonFont
+                
+                ' Set high score font
+                m.highScoreFont = CreateObject("roSGNode", "Font")
+                m.highScoreFont.uri = "pkg:/fonts/AbsoluteXero-YwOO.ttf"
+                m.highScoreFont.size = 24  ' Reduced from 28 to 24
+                m.highScoreText.font = m.highScoreFont
+                
+                ' Hide game over screen initially
+                m.gameOverGroup.visible = false
+                
+                ' Get actual device screen dimensions
+                m.deviceWidth = 1920  ' Default full HD
+                m.deviceHeight = 1080
+                
+                ' Get scene info if available
+                screenInfo = CreateObject("roDeviceInfo")
+                if screenInfo <> invalid
+                    m.deviceWidth = screenInfo.GetDisplaySize().w
+                    m.deviceHeight = screenInfo.GetDisplaySize().h
+                end if
+                
+                ' Game canvas dimensions (fixed size game area)
+                m.canvasWidth = 1280  ' 720p standard game area
+                m.canvasHeight = 720
+                
+                ' Center the game canvas on the screen
+                canvasX = (m.deviceWidth - m.canvasWidth) / 2
+                canvasY = (m.deviceHeight - m.canvasHeight) / 2
+                m.gameCanvas.translation = [canvasX, canvasY]
+                
+                ' Get element sizes
+                m.isopodWidth = m.isopod.width
+                m.isopodHeight = m.isopod.height
+                m.leafWidth = m.leaf.width
+                m.leafHeight = m.leaf.height
+
+                m.isopod.setFocus(true)
+
+                ' Initial position - centered in game canvas
+                m.x = (m.canvasWidth - m.isopodWidth) / 2
+                m.y = (m.canvasHeight - m.isopodHeight) / 2
+                m.isopod.translation = [m.x, m.y]
+
+                ' Movement variables
+                m.baseSpeed = 5          ' Base movement speed
+                m.moveSpeed = m.baseSpeed ' Current movement speed
+                m.speedIncrement = 0.5   ' Speed increase per leaf
+                m.direction = "none"     ' Initial direction
+                m.gameActive = true      ' Game state
+                
+                ' Load high score from registry
+                m.highScore = LoadHighScore()
+                
+                ' Continuous movement timer
+                m.moveTimer = CreateObject("roSGNode", "Timer")
+                m.moveTimer.repeat = true
+                m.moveTimer.duration = 0.033 ' ~30fps for smooth movement
+                m.moveTimer.observeField("fire", "onMoveTimer")
+                m.moveTimer.control = "start"
+
+                ' Leaf counter (score)
+                m.leafCount = 0
+                
+                ' Initialize score display - visible from start in top-left
+                m.scoreBg.opacity = 0.7
+                m.scoreDisplay.opacity = 1
+                m.scoreDisplay.text = "LEAVES: 0"
+                
+                ' Place first leaf
+                RandomizeLeaf()
+                
+                ' Set up animation bitmaps
+                m.animationBitmaps = []
+                m.animationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Foward/isopod.png"))
+                m.animationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Foward/isopod2.png"))
+                m.animationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Foward/isopod3.png"))
+                m.animationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Foward/isopod4.png"))
+                
+                ' Set up downward animation bitmaps
+                m.downAnimationBitmaps = []
+                m.downAnimationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Back/isopod.png"))
+                m.downAnimationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Back/isopod2.png"))
+                m.downAnimationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Back/isopod3.png"))
+                m.downAnimationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Back/isopod4.png"))
+                
+                ' Set up left animation bitmaps
+                m.leftAnimationBitmaps = []
+                m.leftAnimationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Left/isopod.png"))
+                m.leftAnimationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Left/isopod2.png"))
+                m.leftAnimationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Left/isopod3.png"))
+                m.leftAnimationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Left/isopod4.png"))
+                
+                ' Set up right animation bitmaps
+                m.rightAnimationBitmaps = []
+                m.rightAnimationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Right/isopod.png"))
+                m.rightAnimationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Right/isopod2.png"))
+                m.rightAnimationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Right/isopod3.png"))
+                m.rightAnimationBitmaps.push(CreateObject("roBitmap", "pkg:/sprites/Right/isopod4.png"))
+                
+                m.currentFrame = 0
+                m.lastDirection = "none"
+                m.isChangingDirection = false
+                m.animationTimer = CreateObject("roSGNode", "Timer")
+                m.animationTimer.duration = 0.15 ' Changed from 0.40 to 0.15 for smoother animation (150ms per frame)
+                m.animationTimer.repeat = true
+                m.animationTimer.observeField("fire", "onAnimationTimer")
+                m.animationTimer.control = "start" ' Start the timer immediately
+                
+                ' Preload the animation frames
+                m.animationFrames = []
+                for each bitmap in m.animationBitmaps
+                    frame = CreateObject("roBitmap", bitmap)
+                    m.animationFrames.push(frame)
+                end for
+                
+                ' Print debugging info
+                print "Device dimensions: " + m.deviceWidth.ToStr() + " x " + m.deviceHeight.ToStr()
+                print "Game canvas: " + m.canvasWidth.ToStr() + " x " + m.canvasHeight.ToStr() + " at [" + canvasX.ToStr() + "," + canvasY.ToStr() + "]"
+                print "Using font: AbsoluteXero-YwOO.ttf"
+                print "Current high score: " + m.highScore.ToStr()
+            end sub
+
+            function onKeyEvent(key as String, press as Boolean) as Boolean
+                if press
+                    if m.gameActive
+                        if key = "up"
+                            if m.lastDirection <> "up"
+                                m.isChangingDirection = true
+                                m.animationTimer.duration = 0.08 ' Changed from 0.15 to 0.08 for faster direction changes (80ms)
+                                m.currentFrame = 0
+                                m.lastDirection = "up"
+                            end if
+                            m.direction = "up"
+                            return true
+                        else if key = "down"
+                            if m.lastDirection <> "down"
+                                m.isChangingDirection = true
+                                m.animationTimer.duration = 0.08 ' Changed from 0.15 to 0.08 for faster direction changes (80ms)
+                                m.currentFrame = 0
+                                m.lastDirection = "down"
+                            end if
+                            m.direction = "down"
+                            return true
+                        else if key = "left"
+                            if m.lastDirection <> "left"
+                                m.isChangingDirection = true
+                                m.animationTimer.duration = 0.08 ' Changed from 0.15 to 0.08 for faster direction changes (80ms)
+                                m.currentFrame = 0
+                                m.lastDirection = "left"
+                            end if
+                            m.direction = "left"
+                            return true
+                        else if key = "right"
+                            if m.lastDirection <> "right"
+                                m.isChangingDirection = true
+                                m.animationTimer.duration = 0.08 ' Changed from 0.15 to 0.08 for faster direction changes (80ms)
+                                m.currentFrame = 0
+                                m.lastDirection = "right"
+                            end if
+                            m.direction = "right"
+                            return true
+                        end if
+                    else if key = "OK" and not m.gameActive
+                        ' Restart game if game over
+                        RestartGame()
+                        return true
+                    end if
+                end if
+                return false
+            end function
+            
+            sub onMoveTimer()
+                if not m.gameActive
+                    return
+                end if
+                
+                ' Move in the current direction continuously
+                if m.direction = "up"
+                    m.y = m.y - m.moveSpeed
+                else if m.direction = "down"
+                    m.y = m.y + m.moveSpeed
+                else if m.direction = "left"
+                    m.x = m.x - m.moveSpeed
+                else if m.direction = "right"
+                    m.x = m.x + m.moveSpeed
+                end if
+                
+                ' Update isopod position
+                m.isopod.translation = [m.x, m.y]
+                
+                ' Check for out of bounds - Game Over if hit border
+                if not IsInBounds()
+                    GameOver()
+                    return
+                end if
+                
+                ' Check for leaf collection
+                CheckLeafCollision()
+            end sub
+
+            function IsInBounds() as Boolean
+                ' Check if isopod is within game canvas boundaries
+                if m.x < 0 or m.x > (m.canvasWidth - m.isopodWidth) or m.y < 0 or m.y > (m.canvasHeight - m.isopodHeight)
+                    return false
+                end if
+                return true
+            end function
+            
+            sub GameOver()
+                ' Stop the game
+                m.gameActive = false
+                
+                ' Check for new high score
+                isNewHighScore = false
+                if m.leafCount > m.highScore
+                    m.highScore = m.leafCount
+                    SaveHighScore(m.highScore)
+                    isNewHighScore = true
+                end if
+                
+                ' Show game over screen
+                m.gameOverGroup.visible = true
+                
+                ' Set game over text with current score
+                m.gameOverText.text = "GAME OVER - LEAVES: " + m.leafCount.ToStr()
+                
+                ' Update high score text
+                if isNewHighScore
+                    m.highScoreText.text = "NEW HIGH SCORE: " + m.highScore.ToStr() + "!"
+                else
+                    m.highScoreText.text = "BEST SCORE: " + m.highScore.ToStr()
+                end if
+                
+                ' Center the game over text
+                textWidth = m.gameOverText.boundingRect().width
+                textHeight = m.gameOverText.boundingRect().height
+                centerX = (m.canvasWidth - textWidth) / 2
+                centerY = (m.canvasHeight / 2) - textHeight - 40  ' Reduced spacing from 60 to 40
+                m.gameOverText.translation = [centerX, centerY]
+                
+                ' Position high score text below game over text
+                highScoreWidth = m.highScoreText.boundingRect().width
+                highScoreX = (m.canvasWidth - highScoreWidth) / 2
+                highScoreY = centerY + textHeight + 5  ' Reduced spacing from 10 to 5
+                m.highScoreText.translation = [highScoreX, highScoreY]
+                
+                ' Position the restart button below the high score text
+                buttonWidth = m.restartButtonBg.width
+                buttonX = (m.canvasWidth - buttonWidth) / 2
+                buttonY = highScoreY + 40  ' Reduced spacing from 60 to 40
+                m.restartButtonBg.translation = [buttonX, buttonY]
+                m.restartButton.translation = [buttonX, buttonY]
+                
+                print "Game Over! Final score: " + m.leafCount.ToStr() + ", High Score: " + m.highScore.ToStr()
+            end sub
+            
+            sub RestartGame()
+                ' Reset game state
+                m.gameActive = true
+                
+                ' Hide game over screen
+                m.gameOverGroup.visible = false
+                
+                ' Reset position to center
+                m.x = (m.canvasWidth - m.isopodWidth) / 2
+                m.y = (m.canvasHeight - m.isopodHeight) / 2
+                m.isopod.translation = [m.x, m.y]
+                
+                ' Reset direction and speed
+                m.direction = "none"
+                m.moveSpeed = m.baseSpeed
+                
+                ' Reset score
+                m.leafCount = 0
+                UpdateScore()
+                
+                ' Place new leaf
+                RandomizeLeaf()
+                
+                print "Game Restarted"
+            end sub
+
+            ' Functions to handle high score persistence with roRegistry
+            function LoadHighScore() as Integer
+                ' Create registry section for storing game data
+                sec = CreateObject("roRegistrySection", "IsopodGame")
+                if sec.Exists("HighScore")
+                    highScore = sec.Read("HighScore").ToInt()
+                    return highScore
+                end if
+                
+                ' Default high score if none exists
+                return 0
+            end function
+            
+            sub SaveHighScore(score as Integer)
+                ' Store high score in registry
+                sec = CreateObject("roRegistrySection", "IsopodGame")
+                sec.Write("HighScore", score.ToStr())
+                sec.Flush()
+                print "Saved new high score: " + score.ToStr()
+            end sub
+
+            sub CheckLeafCollision()
+                isoX = m.x
+                isoY = m.y
+                leafPos = m.leaf.translation
+                leafX = leafPos[0]
+                leafY = leafPos[1]
+
+                ' Improved collision detection with proper hitbox sizes
+                ' Using actual dimensions of sprites for more accurate collision
+                if (isoX + m.isopodWidth > leafX) and (isoX < leafX + m.leafWidth) and (isoY + m.isopodHeight > leafY) and (isoY < leafY + m.leafHeight)
+                    ' Increment leaf count
+                    m.leafCount = m.leafCount + 1
+                    
+                    ' Increase movement speed
+                    m.moveSpeed = m.baseSpeed + (m.speedIncrement * m.leafCount)
+                    
+                    ' Update score display
+                    UpdateScore()
+                    
+                    ' Generate a new leaf
+                    RandomizeLeaf()
+                    
+                    ' Print debug info about collision
+                    print "Leaf collected! Total count: " + m.leafCount.ToStr()
+                    print "New speed: " + m.moveSpeed.ToStr()
+                end if
+            end sub
+            
+            sub UpdateScore()
+                ' Update score text
+                m.scoreDisplay.text = "LEAVES: " + m.leafCount.ToStr()
+            end sub
+            
+            sub RandomizeLeaf()
+                ' Use game canvas dimensions rather than screen dimensions
+                
+                ' Calculate maximum valid positions to keep leaf fully on canvas
+                maxX = m.canvasWidth - m.leafWidth
+                maxY = m.canvasHeight - m.leafHeight
+                
+                ' Generate random position that keeps leaf completely within canvas boundaries
+                leafX = Rnd(maxX)
+                leafY = Rnd(maxY)
+
+                m.leaf.translation = [leafX, leafY]
+            end sub
+
+            sub onAnimationTimer()
+                if m.direction = "up"
+                    m.currentFrame = (m.currentFrame + 1) mod m.animationBitmaps.Count()
+                    m.isopod.uri = "pkg:/sprites/Foward/isopod" + (m.currentFrame + 1).ToStr() + ".png"
+                    if m.currentFrame = 0
+                        m.animationTimer.duration = 0.1000 ' Optimized first frame duration
+                    else if m.currentFrame = 3
+                        m.animationTimer.duration = 0.05 ' Keep last frame quick for smooth transition
+                        if m.isChangingDirection
+                            m.isChangingDirection = false
+                        end if
+                    else
+                        m.animationTimer.duration = 0.25 ' Slower middle frames for smoother movement
+                    end if
+                else if m.direction = "down"
+                    m.currentFrame = (m.currentFrame + 1) mod m.downAnimationBitmaps.Count()
+                    m.isopod.uri = "pkg:/sprites/Back/isopod" + (m.currentFrame + 1).ToStr() + ".png"
+                    if m.currentFrame = 0
+                        m.animationTimer.duration = 0.1000 ' Optimized first frame duration
+                    else if m.currentFrame = 3
+                        m.animationTimer.duration = 0.05 ' Keep last frame quick for smooth transition
+                        if m.isChangingDirection
+                            m.isChangingDirection = false
+                        end if
+                    else
+                        m.animationTimer.duration = 0.25 ' Slower middle frames for smoother movement
+                    end if
+                else if m.direction = "left"
+                    m.currentFrame = (m.currentFrame + 1) mod m.leftAnimationBitmaps.Count()
+                    m.isopod.uri = "pkg:/sprites/Left/isopod" + (m.currentFrame + 1).ToStr() + ".png"
+                    if m.currentFrame = 0
+                        m.animationTimer.duration = 0.1000 ' Optimized first frame duration
+                    else if m.currentFrame = 3
+                        m.animationTimer.duration = 0.05 ' Keep last frame quick for smooth transition
+                        if m.isChangingDirection
+                            m.isChangingDirection = false
+                        end if
+                    else
+                        m.animationTimer.duration = 0.25 ' Slower middle frames for smoother movement
+                    end if
+                else if m.direction = "right"
+                    m.currentFrame = (m.currentFrame + 1) mod m.rightAnimationBitmaps.Count()
+                    m.isopod.uri = "pkg:/sprites/Right/isopod" + (m.currentFrame + 1).ToStr() + ".png"
+                    if m.currentFrame = 0
+                        m.animationTimer.duration = 0.1000 ' Optimized first frame duration
+                    else if m.currentFrame = 3
+                        m.animationTimer.duration = 0.05 ' Keep last frame quick for smooth transition
+                        if m.isChangingDirection
+                            m.isChangingDirection = false
+                        end if
+                    else
+                        m.animationTimer.duration = 0.25 ' Slower middle frames for smoother movement
+                    end if
+                end if
+            end sub
+        ]]>
+    </script>
+
+    <children>
+        <Rectangle id="background" width="1920" height="1080" color="0x000000FF" />
+        <Group id="gameCanvas" translation="[0,0]">
+            <Rectangle id="gameBackground" width="1280" height="720" color="0x1E4D2BFF" />
+            <Poster id="isopod" uri="pkg:/sprites/foward/isopod.png" width="120" height="120" translation="[400,300]" />
+            <Poster id="leaf" uri="pkg:/images/Leaf.png" width="80" height="80" translation="[100,100]" />
+            
+            <!-- Scoreboard -->
+            <Rectangle id="scoreBg" width="274" height="68" translation="[20, 20]" color="0x000000FF" opacity="0.7" />
+            <Label id="scoreDisplay" width="274" height="68" translation="[20, 20]" horizAlign="center" vertAlign="center" fontSize="32" color="0xFFFFFFFF" opacity="1" />
+            
+            <!-- Game Over Screen -->
+            <Group id="gameOverGroup" visible="false">
+                <Rectangle id="gameOverBg" width="1280" height="720" color="0x000000FF" opacity="0.7" />
+                <Label id="gameOverText" width="800" height="80" translation="[240, 200]" horizAlign="center" vertAlign="center" fontSize="36" color="0xFFFFFFFF" />
+                <Label id="highScoreText" width="400" height="50" translation="[440, 300]" horizAlign="center" vertAlign="center" fontSize="24" color="0xFFFFFFFF" />
+                
+                <!-- Restart Button -->
+                <Rectangle id="restartButtonBg" width="180" height="50" translation="[540, 340]" color="0x1E4D2BFF" opacity="1.0" />
+                <Label id="restartButton" width="180" height="50" translation="[540, 340]" text="RESTART" horizAlign="center" vertAlign="center" fontSize="24" color="0xFFFFFFFF" />
+            </Group>
+        </Group>
+    </children>
+</component>
